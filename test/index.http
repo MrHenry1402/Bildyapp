@@ -1,21 +1,200 @@
-GET http://localhost:3000/api/user
+# BildyApp API — Colección de pruebas
+# Variables: actualiza @token y @refresh con los valores reales tras el login/registro
 
-###
-POST http://localhost:3000/api/user
+@baseUrl = http://localhost:3000/api
+@token = PEGAR_ACCESS_TOKEN_AQUI
+@refresh = PEGAR_REFRESH_TOKEN_AQUI
+
+# ═══════════════════════════════════════════════════════
+# 1. REGISTRO — POST /api/user/register
+# ═══════════════════════════════════════════════════════
+POST {{baseUrl}}/user/register
 Content-Type: application/json
 
 {
-  "name": "Carlhos dominguez",
-  "email": "otrio@gmail.com"
+  "email": "admin@bildyapp.com",
+  "password": "Password123"
 }
 
 ###
-POST http://localhost:3000/api/storage
+
+# ═══════════════════════════════════════════════════════
+# 2. VALIDAR EMAIL — PUT /api/user/validation
+# (consulta el código en MongoDB → campo verificationCode)
+# ═══════════════════════════════════════════════════════
+PUT {{baseUrl}}/user/validation
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "code": "123456"
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 3. LOGIN — POST /api/user/login
+# ═══════════════════════════════════════════════════════
+POST {{baseUrl}}/user/login
+Content-Type: application/json
+
+{
+  "email": "admin@bildyapp.com",
+  "password": "Password123"
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 4a. ONBOARDING: datos personales — PUT /api/user/register
+# ═══════════════════════════════════════════════════════
+PUT {{baseUrl}}/user/register
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Carlos",
+  "lastName": "García López",
+  "nif": "12345678A",
+  "address": {
+    "street": "Calle Mayor",
+    "number": "10",
+    "postal": "28001",
+    "city": "Madrid",
+    "province": "Madrid"
+  }
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 4b. ONBOARDING: compañía nueva — PATCH /api/user/company
+# ═══════════════════════════════════════════════════════
+PATCH {{baseUrl}}/user/company
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "isFreelance": false,
+  "name": "Constructora BildyApp S.L.",
+  "cif": "B12345678",
+  "address": {
+    "street": "Paseo de la Castellana",
+    "number": "200",
+    "postal": "28046",
+    "city": "Madrid",
+    "province": "Madrid"
+  }
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 4c. ONBOARDING: autónomo — PATCH /api/user/company
+# (usa los datos personales del usuario; requiere haberlos guardado antes)
+# ═══════════════════════════════════════════════════════
+PATCH {{baseUrl}}/user/company
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "isFreelance": true
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 5. LOGO DE COMPAÑÍA — PATCH /api/user/logo
+# ═══════════════════════════════════════════════════════
+PATCH {{baseUrl}}/user/logo
+Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=boundary
 
 --boundary
-Content-Disposition: form-data; name="file"; filename="nenufares.jpg"
-Content-Type: image/jpeg
+Content-Disposition: form-data; name="logo"; filename="logo.png"
+Content-Type: image/png
 
-< ./nenufares.jpg
+< ./logo.png
 --boundary--
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 6. OBTENER USUARIO — GET /api/user
+# ═══════════════════════════════════════════════════════
+GET {{baseUrl}}/user
+Authorization: Bearer {{token}}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 7a. REFRESH TOKEN — POST /api/user/refresh
+# ═══════════════════════════════════════════════════════
+POST {{baseUrl}}/user/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh}}"
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 7b. LOGOUT — POST /api/user/logout
+# ═══════════════════════════════════════════════════════
+POST {{baseUrl}}/user/logout
+Authorization: Bearer {{token}}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 8a. ELIMINAR USUARIO (soft delete) — DELETE /api/user?soft=true
+# ═══════════════════════════════════════════════════════
+DELETE {{baseUrl}}/user?soft=true
+Authorization: Bearer {{token}}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 8b. ELIMINAR USUARIO (hard delete) — DELETE /api/user
+# ═══════════════════════════════════════════════════════
+DELETE {{baseUrl}}/user
+Authorization: Bearer {{token}}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 9. CAMBIAR CONTRASEÑA (bonus) — PUT /api/user/password
+# ═══════════════════════════════════════════════════════
+PUT {{baseUrl}}/user/password
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "currentPassword": "Password123",
+  "newPassword": "NuevaPassword456"
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# 10. INVITAR COMPAÑERO — POST /api/user/invite
+# (solo admin)
+# ═══════════════════════════════════════════════════════
+POST {{baseUrl}}/user/invite
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "email": "invitado@bildyapp.com",
+  "name": "Ana",
+  "lastName": "Martínez",
+  "nif": "87654321B"
+}
+
+###
+
+# ═══════════════════════════════════════════════════════
+# HEALTH CHECK
+# ═══════════════════════════════════════════════════════
+GET http://localhost:3000/health
