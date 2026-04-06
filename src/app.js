@@ -2,7 +2,6 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
-import dbConnect from './config/db.js';
 import routes from './routes/index.js';
 import { errorHandler, notFound } from './middleware/errorHandler.middleware.js';
 
@@ -45,7 +44,7 @@ app.use('/uploads', express.static('uploads'));
 // Rutas
 // ─────────────────────────────────────────────────────────────────
 
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -62,23 +61,4 @@ app.use('/api', routes);
 app.use(notFound);
 app.use(errorHandler);
 
-// ─────────────────────────────────────────────────────────────────
-// Arranque del servidor
-// ─────────────────────────────────────────────────────────────────
-
-const PORT = process.env.PORT || 3000;
-
-const startServer = async () => {
-  try {
-    await dbConnect();
-    app.listen(PORT, () => {
-      console.log(`Servidor en http://localhost:${PORT}`);
-      console.log(`API en http://localhost:${PORT}/api`);
-    });
-  } catch (error) {
-    console.error('Error al iniciar:', error);
-    process.exit(1);
-  }
-};
-
-startServer();
+export default app;

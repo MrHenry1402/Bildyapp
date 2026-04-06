@@ -425,6 +425,40 @@ Si cualquier middleware llama a `next(err)`, el flujo salta directamente al `err
 
 ---
 
+---
+
+## Cambios aplicados tras revisión de la especificación
+
+### Separación `app.js` / `index.js`
+
+La especificación indica una estructura donde `app.js` solo configura Express y `index.js` es el punto de entrada que arranca el servidor. En la implementación original, `app.js` hacía ambas cosas. Se ha separado:
+
+- **`src/app.js`** → solo configura middleware, rutas y manejadores de error. Exporta `app` con `export default app`.
+- **`src/index.js`** → importa `app`, llama a `dbConnect()` y arranca el servidor con `app.listen()`.
+
+### `src/config/db.js` → `src/config/index.js`
+
+La especificación muestra `src/config/index.js` como fichero de configuración centralizada. El fichero `db.js` se mantiene por compatibilidad pero el nuevo fichero canónico es `src/config/index.js` (mismo contenido). `app.js` ya no importa ninguno de los dos directamente; la conexión a BD la gestiona `index.js`.
+
+### `package.json` — scripts actualizados
+
+Los scripts `dev` y `start` apuntaban a `src/app.js`. Tras la separación, ahora apuntan a `src/index.js`:
+
+```json
+"dev": "node --watch --env-file=.env src/index.js",
+"start": "node --env-file=.env src/index.js"
+```
+
+### `src/middlewares/` (plural) — carpeta huérfana
+
+Existe una carpeta `src/middlewares/` (plural) con versiones anteriores de `error.middleware.js` y `validate.middleware.js`. **No se importan en ningún lugar del proyecto** — toda la aplicación usa `src/middleware/` (singular). Esta carpeta es código muerto y puede eliminarse sin afectar a la funcionalidad.
+
+### `README.md` añadido
+
+Se ha creado `README.md` con instrucciones de instalación, configuración, ejecución y una tabla de endpoints, tal como exige la especificación en el apartado de entrega.
+
+---
+
 ## Puntos de evaluación cubiertos
 
 | Criterio | Implementado en |
