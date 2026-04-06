@@ -459,6 +459,141 @@ Se ha creado `README.md` con instrucciones de instalación, configuración, ejec
 
 ---
 
+## Mapa de archivos — qué hay en cada fichero y cómo se conectan
+
+### Punto de entrada y configuración
+
+```
+src/index.js
+├── importa → src/app.js          (instancia Express configurada)
+└── importa → src/config/index.js (conecta a MongoDB)
+
+src/app.js
+├── importa → src/routes/index.js                     (todas las rutas)
+└── importa → src/middleware/errorHandler.middleware.js (notFound + errorHandler)
+```
+
+### Rutas
+
+```
+src/routes/index.js
+└── monta en /user → src/routes/user.routes.js
+
+src/routes/user.routes.js
+├── importa → src/controllers/user.controller.js   (lógica de negocio)
+├── importa → src/middleware/auth.middleware.js     (authenticate)
+├── importa → src/middleware/role.middleware.js     (requireRole)
+├── importa → src/middleware/upload.middleware.js   (uploadLogo — Multer)
+├── importa → src/middleware/validate.middleware.js (validateBody — Zod)
+└── importa → src/validators/user.validator.js     (esquemas Zod)
+```
+
+### Controller (lógica de negocio)
+
+```
+src/controllers/user.controller.js
+├── importa → src/models/user.model.js             (User — CRUD)
+├── importa → src/models/company.model.js          (Company — CRUD)
+├── importa → src/models/refreshToken.model.js     (RefreshToken — CRUD)
+├── importa → src/utils/AppError.js                (errores operacionales)
+└── importa → src/services/notification.service.js (emite eventos)
+```
+
+### Modelos Mongoose
+
+```
+src/models/user.model.js
+├── campos: email, password, name, lastName, nif, role, status,
+│           verificationCode, verificationAttempts, company, address, deleted
+├── virtual: fullName (name + lastName)
+├── indexes: email (unique), status, company, role
+└── ref → src/models/company.model.js  (campo company: ObjectId)
+
+src/models/company.model.js
+├── campos: owner, name, cif, address, logo, isFreelance, deleted
+└── ref → src/models/user.model.js     (campo owner: ObjectId)
+
+src/models/refreshToken.model.js
+├── campos: userId, token, expiresAt
+├── TTL index en expiresAt (MongoDB borra automáticamente los expirados)
+└── ref → src/models/user.model.js     (campo userId: ObjectId)
+```
+
+### Middleware
+
+```
+src/middleware/auth.middleware.js
+├── verifica JWT con JWT_SECRET
+└── consulta → src/models/user.model.js (comprueba que el usuario existe y no está deleted)
+
+src/middleware/role.middleware.js
+└── lee req.user.role (puesto por auth.middleware)
+
+src/middleware/validate.middleware.js
+└── ejecuta schemas de → src/validators/user.validator.js
+
+src/middleware/upload.middleware.js
+└── guarda ficheros en → uploads/ (diskStorage Multer, máx 5 MB)
+
+src/middleware/errorHandler.middleware.js
+└── captura errores de → src/utils/AppError.js (y de Mongoose, Multer, Zod)
+```
+
+### Validación
+
+```
+src/validators/user.validator.js  (esquemas Zod exportados)
+├── registerSchema      → POST  /api/user/register
+├── loginSchema         → POST  /api/user/login
+├── verificationSchema  → PUT   /api/user/validation
+├── personalDataSchema  → PUT   /api/user/register
+├── companySchema       → PATCH /api/user/company  (discriminatedUnion isFreelance)
+├── passwordSchema      → PUT   /api/user/password  (refine nueva ≠ actual)
+├── inviteSchema        → POST  /api/user/invite
+└── refreshTokenSchema  → POST  /api/user/refresh
+```
+
+### Servicios y utilidades
+
+```
+src/services/notification.service.js  (EventEmitter)
+├── escucha user:registered → console.log (email + código)
+├── escucha user:verified   → console.log (email)
+├── escucha user:invited    → console.log (email + companyId)
+└── escucha user:deleted    → console.log (userId + soft)
+
+src/utils/AppError.js
+└── métodos factoría: badRequest · unauthorized · forbidden
+                      notFound · conflict · tooManyRequests · internal
+```
+
+### Variables de entorno y quién las usa
+
+```
+PORT               → src/index.js            (puerto del servidor)
+DB_URI             → src/config/index.js     (conexión MongoDB Atlas)
+JWT_SECRET         → src/middleware/auth.middleware.js
+                     src/controllers/user.controller.js (generateTokens)
+JWT_REFRESH_SECRET → src/controllers/user.controller.js (generateTokens)
+PUBLIC_URL         → src/controllers/user.controller.js (URL del logo)
+```
+
+### Flujo de una petición protegida (ejemplo: GET /api/user)
+
+```
+Request
+  → src/app.js              (helmet · mongoSanitize · rateLimit)
+  → src/routes/index.js
+  → src/routes/user.routes.js
+  → src/middleware/auth.middleware.js    (verifica JWT → adjunta req.user)
+  → src/controllers/user.controller.js  (getUser)
+      → User.findById().populate('company')
+      → res.json({ user })   ← incluye virtual fullName
+  → (si error) → src/middleware/errorHandler.middleware.js
+```
+
+---
+
 ## Puntos de evaluación cubiertos
 
 | Criterio | Implementado en |
