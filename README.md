@@ -1,6 +1,8 @@
 # BildyApp API
 
-API REST para la gestión de usuarios de BildyApp — plataforma de albaranes de obra.
+API REST para la gestión de usuarios de BildyApp — plataforma de albaranes de obra. Esta práctica intermedia implementa el módulo completo de gestión de usuarios: registro, autenticación con JWT (access + refresh tokens), verificación de email, onboarding de datos personales y compañía, subida de logo con Multer, sistema de roles (admin/guest), invitación de compañeros, cambio de contraseña y eliminación de cuenta (soft/hard delete). Construido con Node.js 22+, Express 5, MongoDB Atlas, Mongoose, Zod y bcrypt.
+
+Para una explicación detallada paso a paso de cada decisión técnica, arquitectura, flujos y funciones, consulta el fichero [IMPLEMENTACION.md](IMPLEMENTACION.md).
 
 ## Requisitos
 
