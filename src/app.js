@@ -15,7 +15,12 @@ const app = express();
 app.use(helmet());
 
 // Sanitización NoSQL: evita inyección mediante operadores MongoDB ($gt, $where…)
-app.use(mongoSanitize());
+// En Express v5 req.query es read-only; sanitizamos body y params manualmente
+app.use((req, _res, next) => {
+  if (req.body) mongoSanitize.sanitize(req.body);
+  if (req.params) mongoSanitize.sanitize(req.params);
+  next();
+});
 
 // Rate limiting: máximo 100 peticiones por IP cada 15 minutos
 const limiter = rateLimit({

@@ -620,3 +620,86 @@ Request
 | Roles | `middleware/role.middleware.js` |
 | Soft delete | `deleteUser` con `?soft=true` |
 | Multer | `middleware/upload.middleware.js` |
+
+---
+
+## Cambios aplicados en sesión de configuración y testing
+
+### Configuración del `.env`
+
+El fichero `.env` estaba incompleto. Se han aplicado las siguientes correcciones:
+
+1. **Faltaba `DB_URI=`** — la línea de conexión a MongoDB no tenía el nombre de la variable, solo el valor. Se añadió el prefijo `DB_URI=`.
+2. **Generación de JWT secrets** — se generaron `JWT_SECRET` y `JWT_REFRESH_SECRET` con `crypto.randomBytes(64).toString('hex')`, asegurando que sean diferentes entre sí.
+3. **Cluster nuevo de MongoDB Atlas** — el cluster original estaba pausado (Atlas pausa los clusters M0 gratuitos por inactividad). Se creó un cluster nuevo y se actualizó la connection string en `DB_URI`.
+
+### Fix de `express-mongo-sanitize` para Express v5
+
+**Problema:** Al arrancar el servidor, se producía el error:
+
+```
+Cannot set property query of #<IncomingMessage> which has only a getter
+```
+
+**Causa:** En Express v5, `req.query` es una propiedad de solo lectura (getter). El paquete `express-mongo-sanitize` intenta sobrescribir `req.query` directamente con `app.use(mongoSanitize())`, lo que lanza una excepción.
+
+**Solución:** Se reemplazó el middleware global `app.use(mongoSanitize())` por una sanitización manual que solo actúa sobre `req.body` y `req.params`:
+
+```js
+// En Express v5 req.query es read-only; sanitizamos body y params manualmente
+app.use((req, _res, next) => {
+  if (req.body) mongoSanitize.sanitize(req.body);
+  if (req.params) mongoSanitize.sanitize(req.params);
+  next();
+});
+```
+
+Esto mantiene la protección contra inyección NoSQL sin entrar en conflicto con Express v5. Los query params no se sanitizan directamente, pero las queries a MongoDB se construyen desde `req.body` y `req.params`, por lo que la protección sigue siendo efectiva.
+
+### Tests — `node:test` nativo de Node.js
+
+Se ha creado una suite de tests usando el **test runner nativo de Node.js** (`node:test` + `node:assert`), sin dependencias externas. Los tests se dividen en dos categorías:
+
+#### Tests unitarios (`tests/unit/`)
+
+Prueban módulos de forma aislada, sin necesitar servidor ni base de datos:
+
+| Fichero | Qué prueba | Nº tests |
+|---------|-----------|----------|
+| `appError.test.js` | Constructor de `AppError`, status fail/error, `instanceof`, y los 7 métodos factoría (`badRequest`, `unauthorized`, `forbidden`, `notFound`, `conflict`, `tooManyRequests`, `internal`) | 10 |
+| `validators.test.js` | Los 8 esquemas Zod: validaciones correctas, rechazos, `.transform()` (email a lowercase), `.refine()` (password nueva ≠ actual), `discriminatedUnion` (freelance vs empresa) | 28 |
+| `notification.test.js` | Que `notificationService` es instancia de `EventEmitter`, que tiene listeners registrados para los 4 eventos, y que emitir cada evento no lanza errores | 9 |
+
+#### Tests de integración (`tests/integration/`)
+
+Prueban los endpoints HTTP contra el servidor real (requieren que el servidor esté corriendo con `npm run dev`):
+
+| Fichero | Qué prueba | Nº tests |
+|---------|-----------|----------|
+| `api.test.js` | Flujo completo: register, login, rutas protegidas sin token (401), validación de email, GET user, datos personales, company (freelance y empresa), refresh token con rotación, cambio de contraseña, invite, logout, soft delete y hard delete | 27 |
+
+#### Scripts añadidos a `package.json`
+
+```json
+"test:unit": "node --test tests/unit/*.test.js",
+"test:integration": "node --env-file=.env --test tests/integration/*.test.js",
+"test": "node --test tests/unit/*.test.js && node --env-file=.env --test tests/integration/*.test.js"
+```
+
+- `npm run test:unit` — ejecuta solo los unitarios (no necesita servidor)
+- `npm run test:integration` — ejecuta solo los de integración (necesita servidor corriendo)
+- `npm run test` — ejecuta todos secuencialmente
+
+### Mapa de archivos actualizado
+
+```
+tests/
+├── unit/
+│   ├── appError.test.js       (10 tests — clase AppError)
+│   ├── validators.test.js     (28 tests — esquemas Zod)
+│   └── notification.test.js   (9 tests — EventEmitter)
+├── integration/
+│   └── api.test.js            (27 tests — endpoints HTTP)
+└── smoke/
+    └── test-api.js            (script rápido de smoke test manual)
+```
