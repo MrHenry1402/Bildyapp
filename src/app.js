@@ -2,8 +2,10 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
+import morganBody from 'morgan-body';
 import routes from './routes/index.js';
 import { errorHandler, notFound } from './middleware/errorHandler.middleware.js';
+import { loggerStream } from './utils/handleLogger.js';
 
 const app = express();
 
@@ -33,6 +35,13 @@ app.use('/api', limiter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Morgan-body: loguea peticiones con errores HTTP >= 400 y las envía a Slack
+morganBody(app, {
+  noColors: true,
+  skip: (_req, res) => res.statusCode < 400,
+  stream: loggerStream
+});
 
 // ─────────────────────────────────────────────────────────────────
 // Archivos estáticos (logos subidos)

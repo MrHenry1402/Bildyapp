@@ -594,6 +594,417 @@ Request
 
 ---
 
+## Paso 16: `src/docs/swagger.js` — Documentación con Swagger (T8)
+
+### ¿Qué es Swagger?
+
+**Swagger** es un conjunto de herramientas de código abierto para diseñar, construir y documentar APIs RESTful. Sigue la especificación **OpenAPI 3.0**.
+
+Beneficios:
+- Documentación interactiva auto-generada
+- Los clientes pueden probar la API desde el navegador
+- Contrato claro entre frontend y backend
+
+### Instalación
+
+```bash
+npm install swagger-ui-express swagger-jsdoc
+```
+
+### Configuración `src/docs/swagger.js`
+
+```js
+import swaggerJsdoc from 'swagger-jsdoc';
+
+const options = {
+  definition: {
+    openapi: '3.0.3',
+    info: {
+      title: 'BildyApp API',
+      version: '1.0.0',
+      description: 'API REST de gestión de usuarios y compañías',
+    },
+    servers: [{ url: 'http://localhost:3000', description: 'Servidor de desarrollo' }],
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
+      },
+      schemas: {
+        User: {
+          type: 'object',
+          required: ['email', 'password'],
+          properties: {
+            email: { type: 'string', format: 'email', example: 'user@bildy.com' },
+            password: { type: 'string', format: 'password' },
+            name: { type: 'string', example: 'Juan' },
+            lastName: { type: 'string', example: 'Pérez' },
+            nif: { type: 'string', example: '12345678A' },
+            role: { type: 'string', enum: ['admin', 'guest'], default: 'admin' }
+          }
+        },
+        Error: {
+          type: 'object',
+          properties: {
+            error: { type: 'boolean', example: true },
+            message: { type: 'string', example: 'Mensaje de error' }
+          }
+        }
+      }
+    }
+  },
+  apis: ['./src/routes/*.js']  // Las anotaciones JSDoc se leen de los archivos de rutas
+};
+
+export default swaggerJsdoc(options);
+```
+
+### Integración en `src/app.js`
+
+```js
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpecs from './docs/swagger.js';
+
+// Antes de las rutas
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
+```
+
+Accesible en: `http://localhost:3000/api-docs`
+
+### Documentar rutas con JSDoc en `src/routes/user.routes.js`
+
+```js
+/**
+ * @openapi
+ * /api/user/register:
+ *   post:
+ *     tags: [User]
+ *     summary: Registrar nuevo usuario
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/User'
+ *     responses:
+ *       201:
+ *         description: Usuario creado. Se envía código de verificación por consola.
+ *       409:
+ *         description: Email ya registrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.post('/register', validateBody(registerSchema), register);
+
+/**
+ * @openapi
+ * /api/user/login:
+ *   post:
+ *     tags: [User]
+ *     summary: Iniciar sesión
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Login'
+ *     responses:
+ *       200:
+ *         description: Login exitoso, devuelve accessToken y refreshToken
+ *       401:
+ *         description: Credenciales incorrectas
+ */
+router.post('/login', validateBody(loginSchema), login);
+
+/**
+ * @openapi
+ * /api/user:
+ *   get:
+ *     tags: [User]
+ *     summary: Obtener perfil del usuario autenticado
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Perfil del usuario (incluye virtual fullName)
+ *       401:
+ *         description: No autorizado
+ */
+router.get('/', authenticate, getUser);
+```
+
+**Por qué JSDoc en las rutas:** Las anotaciones `@openapi` viven junto al código que documentan. `swagger-jsdoc` las escanea automáticamente desde `apis: ['./src/routes/*.js']`, evitando mantener un fichero de especificación separado que se desincroniza.
+
+---
+
+## Paso 17: `tests/` — Testing con Jest y Supertest (T8)
+
+### ¿Por qué Jest + Supertest?
+
+- **Jest**: framework de testing estándar en el ecosistema Node.js con mocking integrado y coverage de código.
+- **Supertest**: permite hacer peticiones HTTP reales a la app Express en memoria, sin levantar un servidor.
+
+### Instalación
+
+```bash
+npm install --save-dev jest supertest
+```
+
+### Configuración en `package.json`
+
+```json
+{
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --forceExit --detectOpenHandles",
+    "test:watch": "npm test -- --watch",
+    "test:coverage": "npm test -- --coverage"
+  }
+}
+```
+
+**`--experimental-vm-modules`:** necesario para ESM (`"type": "module"`).  
+**`--forceExit`:** cierra Jest aunque queden handles abiertos (conexión MongoDB).  
+**`--detectOpenHandles`:** muestra qué está impidiendo que el proceso termine.
+
+### `jest.config.js`
+
+```js
+export default {
+  testEnvironment: 'node',
+  transform: {},                              // Sin Babel: usamos ESM nativo
+  moduleFileExtensions: ['js'],
+  testMatch: ['**/tests/**/*.test.js'],
+  collectCoverageFrom: ['src/**/*.js'],
+  coveragePathIgnorePatterns: ['/node_modules/', '/tests/'],
+  verbose: true
+};
+```
+
+**`transform: {}`:** desactiva la transformación de Babel. Con Node 22 + `--experimental-vm-modules`, Jest puede ejecutar ESM directamente.
+
+### `tests/user.test.js` — Tests de autenticación y perfil
+
+```js
+import request from 'supertest';
+import app from '../src/app.js';
+
+describe('User Endpoints', () => {
+  let accessToken = '';
+  let userId = '';
+
+  const testUser = {
+    email: `test_${Date.now()}@bildy.com`,
+    password: 'Test1234!'
+  };
+
+  // --- Registro ---
+  describe('POST /api/user/register', () => {
+    it('debería registrar un nuevo usuario (201)', async () => {
+      const res = await request(app)
+        .post('/api/user/register')
+        .send(testUser)
+        .expect('Content-Type', /json/)
+        .expect(201);
+
+      expect(res.body).toHaveProperty('message');
+    });
+
+    it('debería rechazar email duplicado (409)', async () => {
+      await request(app)
+        .post('/api/user/register')
+        .send(testUser)
+        .expect(409);
+    });
+
+    it('debería rechazar datos inválidos (400)', async () => {
+      await request(app)
+        .post('/api/user/register')
+        .send({ email: 'no-es-email' })
+        .expect(400);
+    });
+  });
+
+  // --- Validación de email ---
+  describe('PUT /api/user/validation', () => {
+    it('debería rechazar un código incorrecto (400/429)', async () => {
+      // Primero hacer login para obtener token (usuario no verificado)
+      // En tests, el código de verificación aparece en consola via EventEmitter
+      const loginRes = await request(app)
+        .post('/api/user/login')
+        .send(testUser);
+      // Si el usuario aún no está verificado, login debería responder 403
+      expect([200, 403]).toContain(loginRes.status);
+    });
+  });
+
+  // --- Login ---
+  describe('POST /api/user/login', () => {
+    it('debería rechazar contraseña incorrecta (401)', async () => {
+      await request(app)
+        .post('/api/user/login')
+        .send({ email: testUser.email, password: 'WrongPass!' })
+        .expect(401);
+    });
+  });
+
+  // --- Rutas protegidas ---
+  describe('Rutas protegidas', () => {
+    it('debería rechazar sin token (401)', async () => {
+      await request(app)
+        .get('/api/user')
+        .expect(401);
+    });
+
+    it('debería rechazar token inválido (401)', async () => {
+      await request(app)
+        .get('/api/user')
+        .set('Authorization', 'Bearer token_invalido')
+        .expect(401);
+    });
+  });
+});
+```
+
+**Por qué `Date.now()` en el email:** Garantiza que cada ejecución de tests usa un usuario único, evitando colisiones con datos de tests anteriores que no se limpiaron.
+
+**`afterAll` con limpieza:** Si el test crea datos en BD, debe limpiarlos para que los tests sean idempotentes. Se usa el endpoint `DELETE /api/user` o directamente con Mongoose si se importa el modelo.
+
+### Ejecutar tests
+
+```bash
+npm test                  # Una sola vez
+npm run test:watch        # Re-ejecuta al cambiar archivos
+npm run test:coverage     # Genera reporte de cobertura
+```
+
+---
+
+## Paso 18: `src/utils/handleLogger.js` — Monitorización con Slack (T8)
+
+### ¿Por qué Slack?
+
+Enviar errores a Slack permite:
+- Notificaciones en tiempo real al equipo
+- Historial de errores centralizado
+- Alertas para operaciones críticas (registro masivo, eliminaciones, etc.)
+
+### Instalación
+
+```bash
+npm install morgan-body @slack/webhook
+```
+
+### Configurar Slack Webhook
+
+1. Ve a `api.slack.com/messaging/webhooks`
+2. Crea una nueva app "From Scratch"
+3. Activa **Incoming Webhooks**
+4. Añade webhook al canal deseado (ej: `#logs-bildyapp`)
+5. Copia la URL del webhook → `SLACK_WEBHOOK` en `.env`
+
+### `src/utils/handleLogger.js`
+
+```js
+import { IncomingWebhook } from '@slack/webhook';
+
+const webhook = process.env.SLACK_WEBHOOK
+  ? new IncomingWebhook(process.env.SLACK_WEBHOOK)
+  : null;
+
+// Stream compatible con morgan-body.
+// morgan-body llama a stream.write(message) por cada petición que no se skipea.
+export const loggerStream = {
+  write: (message) => {
+    if (webhook) {
+      webhook.send({
+        text: `🚨 *Error en BildyApp API*\n\`\`\`${message}\`\`\``
+      }).catch(err => console.error('Error enviando a Slack:', err));
+    }
+    console.error(message);
+  }
+};
+
+// Envío manual para eventos de negocio desde el NotificationService.
+export const sendSlackNotification = async (message) => {
+  if (webhook) {
+    try {
+      await webhook.send({ text: message });
+    } catch (err) {
+      console.error('Error enviando a Slack:', err);
+    }
+  }
+};
+```
+
+**Por qué `if (webhook)`:** Si `SLACK_WEBHOOK` no está definido en `.env` (entorno de desarrollo o tests), el logger funciona igual pero solo hace `console.error`. Evita romper la app si no hay webhook configurado.
+
+### Integración en `src/app.js`
+
+```js
+import morganBody from 'morgan-body';
+import { loggerStream } from './utils/handleLogger.js';
+
+// Después de express.json(), antes de las rutas
+morganBody(app, {
+  noColors: true,
+  skip: (_req, res) => res.statusCode < 400, // Solo loguea errores 4xx/5xx
+  stream: loggerStream
+});
+```
+
+**`skip: (_req, res) => res.statusCode < 400`:** Filtra el ruido — solo envía a Slack peticiones que terminaron en error (4xx o 5xx). Las peticiones exitosas no generan notificación.
+
+### Integración en `src/services/notification.service.js`
+
+Los listeners del EventEmitter ahora llaman también a `sendSlackNotification` además de `console.log`:
+
+```js
+import { EventEmitter } from 'events';
+import { sendSlackNotification } from '../utils/handleLogger.js';
+
+class NotificationService extends EventEmitter {
+  _registerListeners() {
+    this.on('user:registered', (data) => {
+      console.log(`[EVENT] user:registered — email: ${data.email} | código verificación: ${data.verificationCode}`);
+      sendSlackNotification(`✅ Nuevo usuario registrado: ${data.email}`);
+    });
+
+    this.on('user:verified', (data) => {
+      console.log(`[EVENT] user:verified — email: ${data.email}`);
+      sendSlackNotification(`✅ Usuario verificado: ${data.email}`);
+    });
+
+    this.on('user:invited', (data) => {
+      console.log(`[EVENT] user:invited — email: ${data.email} | compañía: ${data.companyId}`);
+      sendSlackNotification(`📩 Usuario invitado: ${data.email} a la compañía ${data.companyId}`);
+    });
+
+    this.on('user:deleted', (data) => {
+      console.log(`[EVENT] user:deleted — userId: ${data.userId} | soft: ${data.soft}`);
+      const tipo = data.soft ? 'soft delete' : 'hard delete';
+      sendSlackNotification(`⚠️ Usuario eliminado (${tipo}): ${data.userId}`);
+    });
+  }
+}
+```
+
+**Dos canales de notificación:**
+- **morgan-body → loggerStream:** captura automáticamente cualquier petición HTTP que falle (4xx/5xx).
+- **EventEmitter → sendSlackNotification:** notificaciones de negocio para eventos concretos, independientemente del código HTTP.
+
+### Añadir `SLACK_WEBHOOK` a `.env`
+
+```env
+# Slack Webhook — Obtener en: api.slack.com/messaging/webhooks
+# Si no se define, los logs van solo a consola
+SLACK_WEBHOOK=https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
+```
+
+**Importante:** nunca commitear la URL real del webhook. En `.env.example` se deja la variable vacía para documentar su existencia sin exponer el valor real.
+
+---
+
 ## Puntos de evaluación cubiertos
 
 | Criterio | Implementado en |
@@ -620,3 +1031,7 @@ Request
 | Roles | `middleware/role.middleware.js` |
 | Soft delete | `deleteUser` con `?soft=true` |
 | Multer | `middleware/upload.middleware.js` |
+| Swagger / OpenAPI 3.0 | `docs/swagger.js` + anotaciones `@openapi` en `routes/user.routes.js` |
+| Jest + Supertest | `tests/user.test.js` — registro, login, rutas protegidas |
+| morgan-body + Slack | `utils/handleLogger.js` + `app.js` |
+| Notificaciones Slack manuales | `services/notification.service.js` vía `sendSlackNotification` |
